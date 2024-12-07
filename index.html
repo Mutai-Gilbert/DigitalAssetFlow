@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webflow Paddle Integration</title>
+    <script src="https://cdn.paddle.com/paddle/paddle.js"></script>
+</head>
+<body>
+    <script type="text/javascript">
+        // Configuration
+        const PADDLE_VENDOR_ID = '';
+        const PRICE_ID = '';
+        const API_GATEWAY_URL = '';
+
+        // Initialize Paddle
+        Paddle.Setup({ 
+            vendor: PADDLE_VENDOR_ID,
+            environment: 'production'
+        });
+
+        console.log('Paddle initialized with vendor ID:', PADDLE_VENDOR_ID);
+
+        // Helper function to show status messages
+        function showMessage(message, isError = false) {
+            console.log(`Status message: ${message}, isError: ${isError}`);
+            const statusElement = document.getElementById('status-message');
+            if (statusElement) {
+                statusElement.textContent = message;
+                statusElement.className = isError ? 'error' : 'success';
+            } else {
+                console.warn('Status message element not found');
+            }
+        }
+
+        // Helper function to get asset URL
+        async function getAssetUrl(checkoutData) {
+            console.log('Getting asset URL for checkout data:', checkoutData);
+            try {
+                const requestBody = {
+                    product_id: PRICE_ID,
+                    buyer_email: checkoutData.user.email,
+                    payment_status: 'completed',
+                    alert_name: 'payment_success'
+                };
+                console.log('Sending request to API Gateway:', requestBody);
+
+                const response = await fetch(`${API_GATEWAY_URL}/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                console.log('API Gateway response status:', response.status);
+                if (!response.ok) {
+                    throw new Error(`Failed to get asset URL: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('API Gateway response data:', data);
+                return data.url; 
+            } catch (error) {
+                console.error('Error getting asset URL:', error);
+                throw error;
+            }
+        }
+
+        // Helper function to download asset
+        async function downloadAsset(url) {
+            console.log('Starting download with URL:', url);
+            try {
+                window.location.href = url;
+                console.log('Download initiated');
+            } catch (error) {
+                console.error('Error downloading asset:', error);
+                throw error;
+            }
+        }
+
+        // Function to handle Paddle checkout
+        function handlePaddleCheckout() {
+            console.log('Opening Paddle checkout...');
+            try {
+                Paddle.Checkout.open({
+                    product: PRICE_ID,
+                    email: null, // Will be collected in checkout
+                    success: async (data) => {
+                        console.log('Paddle checkout success:', data);
+                        try {
+                            // Get and download the asset
+                            const assetUrl = await getAssetUrl(data);
+                            console.log('Retrieved asset URL:', assetUrl);
+                            await downloadAsset(assetUrl);
+
+                            showMessage('Purchase successful! Your download should begin automatically.');
+                        } catch (error) {
+                            console.error('Error in success callback:', error);
+                            console.error('Checkout data:', data);
+                            showMessage('Purchase completed but failed to download asset. Please contact support.', true);
+                        }
+                    },
+                    closeCallback: () => {
+                        console.log('Paddle checkout closed');
+                    }
+                });
+            } catch (error) {
+                console.error('Error opening Paddle checkout:', error);
+                showMessage('Failed to initiate checkout. Please try again.', true);
+            }
+        }
+
+        // Wait for DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM fully loaded, setting up event listeners');
+            
+            // Try to find the button
+            const soloButton = document.getElementById('soloPlanBtn');
+            if (soloButton) {
+                console.log('Found solo plan button, attaching event listener');
+                soloButton.addEventListener('click', handlePaddleCheckout);
+            } else {
+                console.warn('Solo plan button not found on initial load, setting up mutation observer');
+                
+                // Set up a MutationObserver to watch for the button being added
+                const observer = new MutationObserver(function(mutations) {
+                    const button = document.getElementById('soloPlanBtn');
+                    if (button && !button.hasListener) {
+                        console.log('Found solo plan button after DOM mutation, attaching event listener');
+                        button.addEventListener('click', handlePaddleCheckout);
+                        button.hasListener = true; // Mark the button as having a listener
+                    }
+                });
+
+                // Start observing the document body for changes
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+        });
+
+        // Make the checkout function globally available as a fallback
+        window.handlePaddleCheckout = handlePaddleCheckout;
+        console.log('Paddle checkout function ready');
+    </script>
+</body>
+</html>
